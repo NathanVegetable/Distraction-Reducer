@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 @PluginDescriptor(
         name = "Distraction Reducer",
         description = "Blacks out the screen while skilling to reduce distractions",
-        tags = {"woodcutting", "fishing", "mining", "cooking", "herblore", "crafting", "fletching", "smithing", "magic", "skilling", "overlay"}
+        tags = {"woodcutting", "fishing", "mining", "cooking", "herblore", "crafting", "fletching", "smithing", "magic", "sailing", "salvaging", "skilling", "overlay"}
 )
 @Slf4j
 public class DistractionReducerPlugin extends Plugin {
@@ -49,7 +49,7 @@ public class DistractionReducerPlugin extends Plugin {
     private boolean wasCombating = false;
     private Set<Integer> targetMonsterIds = new HashSet<>();
     private Set<String> targetMonsterNames = new HashSet<>();
-    
+
     // Interface auto-exit cooldown
     private int interfaceExitCooldownTicks = 0;
 
@@ -202,6 +202,12 @@ public class DistractionReducerPlugin extends Plugin {
             10570   // Redwood logs
     );
 
+    private static final Set<Integer> SAILING_SALVAGING_ANIMATION_IDS = Set.of(
+            net.runelite.api.gameval.AnimationID.SAILING_HUMAN_SALVAGE_HOOK_KANDARIN_3X8_DROP01, // Salvaging is beginning
+            net.runelite.api.gameval.AnimationID.SAILING_HUMAN_SALVAGE_HOOK_KANDARIN_3X8_IDLE01, // We are salvaging
+            net.runelite.api.gameval.AnimationID.SAILING_HUMAN_SALVAGE_HOOK_KANDARIN_1X3_INTERACT01 // Processing salvages
+    );
+
     @Provides
     DistractionReducerConfig provideConfig(ConfigManager configManager) {
         return configManager.getConfig(DistractionReducerConfig.class);
@@ -222,9 +228,9 @@ public class DistractionReducerPlugin extends Plugin {
     @Subscribe
     public void onConfigChanged(ConfigChanged configChanged) {
         if ("distractionreducer".equals(configChanged.getGroup())) {
-            if ("monsterIds".equals(configChanged.getKey()) || 
-                "monsterNames".equals(configChanged.getKey()) ||
-                "enableCombatBlackout".equals(configChanged.getKey())) {
+            if ("monsterIds".equals(configChanged.getKey()) ||
+                    "monsterNames".equals(configChanged.getKey()) ||
+                    "enableCombatBlackout".equals(configChanged.getKey())) {
                 updateTargetMonsterIds();
             }
         }
@@ -253,12 +259,12 @@ public class DistractionReducerPlugin extends Plugin {
             wasCombating = false;
             restoreDelayTicks = 0;
             combatRestoreDelayTicks = 0;
-            
+
             // Set cooldown if interface auto-exit was triggered
             if (shouldExitForInterface) {
                 interfaceExitCooldownTicks = 3;
             }
-            
+
             distractionReducerOverlay.setRenderOverlay(false);
             return;
         }
@@ -325,7 +331,7 @@ public class DistractionReducerPlugin extends Plugin {
         boolean isMoving = isPlayerMoving(player);
         boolean shouldRenderFromSkilling = (isSkilling() || wasSkilling) && !isMoving;
         boolean shouldRenderFromCombat = (isCombatingTargetMonster() || wasCombating) && !isMoving && !isHealthOrPrayerOverrideActive() && !isWildernessOverrideActive();
-        
+
         // Prevent overlay from showing during interface exit cooldown
         boolean shouldRenderOverlay = (shouldRenderFromSkilling || shouldRenderFromCombat) && interfaceExitCooldownTicks == 0;
 
@@ -389,6 +395,7 @@ public class DistractionReducerPlugin extends Plugin {
                 (CRAFTING_ANIMATION_IDS.contains(animation) && config.crafting()) ||
                 (FLETCHING_ANIMATION_IDS.contains(animation) && config.fletching()) ||
                 (FIREMAKING_ANIMATION_IDS.contains(animation) && config.firemaking()) ||
+                (SAILING_SALVAGING_ANIMATION_IDS.contains(animation) && config.sailing()) ||
                 (isSmithing(animation) && config.smithing()) ||
                 (isMagic(animation) && config.magic());
     }
@@ -410,7 +417,7 @@ public class DistractionReducerPlugin extends Plugin {
         }
 
         int regionID = playerLocation.getRegionID();
-        
+
         // Check if player is in any POH region
         if (POH_REGIONS.contains(regionID)) {
             return true;
@@ -476,7 +483,7 @@ public class DistractionReducerPlugin extends Plugin {
     private boolean isInWilderness() {
         Player player = client.getLocalPlayer();
         if (player == null) return false;
-        
+
         WorldPoint location = player.getWorldLocation();
         return location.isInArea2D(WILDERNESS_ABOVE_GROUND, WILDERNESS_UNDERGROUND);
     }
@@ -501,7 +508,7 @@ public class DistractionReducerPlugin extends Plugin {
     private void updateTargetMonsterIds() {
         targetMonsterIds.clear();
         targetMonsterNames.clear();
-        
+
         if (config.enableCombatBlackout()) {
             // Parse monster IDs
             if (!config.monsterIds().trim().isEmpty()) {
@@ -514,7 +521,7 @@ public class DistractionReducerPlugin extends Plugin {
                     }
                 }
             }
-            
+
             // Parse monster names
             if (!config.monsterNames().trim().isEmpty()) {
                 String[] names = config.monsterNames().split(",");
@@ -523,7 +530,7 @@ public class DistractionReducerPlugin extends Plugin {
                 }
             }
         }
-        
+
         log.debug("Updated target monster IDs: {}", targetMonsterIds);
         log.debug("Updated target monster names: {}", targetMonsterNames);
     }
@@ -546,16 +553,16 @@ public class DistractionReducerPlugin extends Plugin {
         NPC npc = (NPC) interacting;
         int npcId = npc.getId();
         String npcName = npc.getName();
-        
+
         // Check by ID
         boolean isTargetById = targetMonsterIds.contains(npcId);
-        
+
         // Check by name
         boolean isTargetByName = false;
         if (npcName != null && !targetMonsterNames.isEmpty()) {
             isTargetByName = targetMonsterNames.contains(npcName.toLowerCase());
         }
-        
+
         boolean isTargetMonster = isTargetById || isTargetByName;
         if (isTargetMonster) {
             if (isTargetById) {
@@ -565,7 +572,7 @@ public class DistractionReducerPlugin extends Plugin {
                 log.debug("Player is combating target monster with name: {}", npcName);
             }
         }
-        
+
         return isTargetMonster;
     }
 
@@ -577,7 +584,7 @@ public class DistractionReducerPlugin extends Plugin {
         // Check health override
         if (config.enableHealthOverride()) {
             int currentHp = client.getBoostedSkillLevel(Skill.HITPOINTS);
-            
+
             if (currentHp <= config.healthThreshold()) {
                 log.debug("Health override active: {} HP <= {} HP", currentHp, config.healthThreshold());
                 return true;
@@ -587,7 +594,7 @@ public class DistractionReducerPlugin extends Plugin {
         // Check prayer override
         if (config.enablePrayerOverride()) {
             int currentPrayer = client.getBoostedSkillLevel(Skill.PRAYER);
-            
+
             if (currentPrayer <= config.prayerThreshold()) {
                 log.debug("Prayer override active: {} Prayer <= {} Prayer", currentPrayer, config.prayerThreshold());
                 return true;
